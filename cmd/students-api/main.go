@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Jeffrey-Thomass/students-api/internal/config"
+	"github.com/Jeffrey-Thomass/students-api/internal/http/handlers/student"
 )
 
 func main() {
@@ -25,9 +26,7 @@ func main() {
 
 	router := http.NewServeMux()
 
-	router.HandleFunc("GET /", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("welcome to student's api"))
-	})
+	router.HandleFunc("GET /api/students", student.New())
 
 	// setup server
 	server := http.Server{
@@ -54,7 +53,7 @@ func main() {
 	slog.Info("shutting down server")
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
+	defer cancel() // this clean up the timer
 
 	err := server.Shutdown(ctx)
 	if err != nil {
