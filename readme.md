@@ -503,3 +503,330 @@ validator.ValidationErrors
 ```
 
 Using type assertion extracts the specific validation error details so they can be processed.
+
+
+
+# Understanding `err`, `validateErrs`, and `FieldError` in Go Validator
+
+This note explains how validation errors work when using the Go package:
+
+```
+github.com/go-playground/validator/v10
+```
+
+Particularly how this code works:
+
+```go
+if err := validator.New().Struct(student); err != nil {
+
+	validateErrs := err.(validator.ValidationErrors)
+	response.WriteJson(w, http.StatusBadRequest, response.ValidationError(validateErrs))
+	return
+}
+```
+
+---
+
+# 1. What `validator.Struct()` Returns
+
+The function:
+
+```go
+validator.New().Struct(student)
+```
+
+returns:
+
+```
+error
+```
+
+Possible outcomes:
+
+| Case              | Result                           |
+| ----------------- | -------------------------------- |
+| Validation passes | `err = nil`                      |
+| Validation fails  | `err` contains validation errors |
+
+Example validation failure output when printed:
+
+```
+Key: 'Student.Email' Error:Field validation for 'Email' failed on the 'required' tag
+Key: 'Student.Age' Error:Field validation for 'Age' failed on the 'required' tag
+```
+
+However, **this is only the string representation** of the error.
+
+---
+
+# 2. What `err` Actually Contains
+
+Even though `err` is declared as type `error`, the **actual underlying value** stored inside it is:
+
+```
+validator.ValidationErrors
+```
+
+Conceptually:
+
+```
+err (type: error interface)
+      ↓
+actual underlying value
+validator.ValidationErrors
+```
+
+So the error interface is just **wrapping the real value**.
+
+---
+
+# 3. Converting `err` Using Type Assertion
+
+This line extracts the real value:
+
+```go
+validateErrs := err.(validator.ValidationErrors)
+```
+
+Now the type becomes:
+
+```
+validator.ValidationErrors
+```
+
+Inside the validator library it is defined roughly like this:
+
+```go
+type ValidationErrors []FieldError
+```
+
+So `validateErrs` is a **slice of validation errors**.
+
+Conceptually:
+
+```
+validateErrs = [
+  FieldError,
+  FieldError,
+  FieldError
+]
+```
+
+Each element represents **one failed field validation**.
+
+---
+
+# 4. Structure of `FieldError`
+
+Each `FieldError` object stores information about a validation failure.
+
+Conceptually it contains:
+
+```
+FieldError
+   fieldName
+   validationRule
+   invalidValue
+```
+
+The library does **not expose fields directly**, but provides methods to access them.
+
+Important methods:
+
+| Method        | Meaning                 |
+| ------------- | ----------------------- |
+| `Field()`     | returns field name      |
+| `ActualTag()` | returns validation rule |
+| `Value()`     | returns invalid value   |
+
+---
+
+# 5. Example Validation Failure
+
+Struct:
+
+```go
+type Student struct {
+	Name  string `validate:"required"`
+	Email string `validate:"required"`
+	Age   int    `validate:"required"`
+}
+```
+
+Invalid input:
+
+```json
+{
+  "name": "Jeffrey"
+}
+```
+
+Decoded struct:
+
+```
+Name  = "Jeffrey"
+Email = ""
+Age   = 0
+```
+
+Validator detects:
+
+```
+Email required
+Age required
+```
+
+So internally:
+
+```
+validateErrs = [
+  FieldError(Email required),
+  FieldError(Age required)
+]
+```
+
+---
+
+# 6. Looping Through Errors
+
+Your code:
+
+```go
+for _, e := range validateErrs {
+	fmt.Println(e.Field())
+	fmt.Println(e.ActualTag())
+}
+```
+
+Iteration 1:
+
+```
+e.Field()      → "Email"
+e.ActualTag()  → "required"
+```
+
+Iteration 2:
+
+```
+e.Field()      → "Age"
+e.ActualTag()  → "required"
+```
+
+---
+
+# 7. Why `fmt.Println()` Shows a String
+
+If you print:
+
+```go
+fmt.Println(validateErrs)
+```
+
+Go prints:
+
+```
+Key: 'Student.Email' Error:Field validation for 'Email' failed on the 'required' tag
+Key: 'Student.Age' Error:Field validation for 'Age' failed on the 'required' tag
+```
+
+This happens because the validator library implements:
+
+```go
+Error() string
+```
+
+So when Go prints the value, it calls:
+
+```
+Error()
+```
+
+and displays the formatted message.
+
+Important:
+
+> This printed text is **not the actual structure** — it is just the formatted output.
+
+---
+
+# 8. Real Internal Structure
+
+Internally it looks more like:
+
+```
+validateErrs
+│
+├── FieldError
+│      Field() → "Email"
+│      ActualTag() → "required"
+│
+└── FieldError
+       Field() → "Age"
+       ActualTag() → "required"
+```
+
+---
+
+# 9. Why Type Assertion is Necessary
+
+When `err` is type `error`, Go only allows methods defined by the `error` interface:
+
+```
+Error() string
+```
+
+So this will **not work**:
+
+```
+err.Field()
+```
+
+Because the `error` interface doesn't know about `Field()`.
+
+After conversion:
+
+```go
+validateErrs := err.(validator.ValidationErrors)
+```
+
+Go now knows the real type, so you can access:
+
+```
+Field()
+ActualTag()
+Value()
+```
+
+---
+
+# 10. Final Flow
+
+```
+Client sends request
+        ↓
+JSON decoded into struct
+        ↓
+validator.Struct(student)
+        ↓
+Validation fails
+        ↓
+err returned (type: error interface)
+        ↓
+Type assertion extracts real value
+err.(validator.ValidationErrors)
+        ↓
+Slice of FieldError objects
+        ↓
+Loop through errors
+        ↓
+Generate readable messages
+        ↓
+Return API response
+```
+
+---
+
+# Key Idea
+
+The string you see when printing validation errors is **only the formatted output**.
+Internally, `validator.ValidationErrors` contains **structured `FieldError` objects** that allow access to the field name and validation rule using methods like `Field()` and `ActualTag()`.
