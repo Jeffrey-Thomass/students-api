@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"log/slog"
 	"net/http"
 	"os"
@@ -12,6 +13,7 @@ import (
 
 	"github.com/Jeffrey-Thomass/students-api/internal/config"
 	"github.com/Jeffrey-Thomass/students-api/internal/http/handlers/student"
+	"github.com/Jeffrey-Thomass/students-api/internal/storage/sqlite"
 )
 
 func main() {
@@ -22,6 +24,14 @@ func main() {
 	fmt.Println(cfg)
 
 	// database setup
+
+	_, err := sqlite.New(cfg)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	slog.Info("storage initialized", slog.String("env", cfg.Env), slog.String("version", "1.0.0"))
+
 	// setup router
 
 	router := http.NewServeMux()
@@ -55,9 +65,9 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel() // this clean up the timer
 
-	err := server.Shutdown(ctx)
-	if err != nil {
-		slog.Error("failed ot shutdown server", slog.String("error", err.Error()))
+	err2 := server.Shutdown(ctx)
+	if err2 != nil {
+		slog.Error("failed ot shutdown server", slog.String("error", err2.Error()))
 	}
 
 	slog.Info("server shut down successfully")
